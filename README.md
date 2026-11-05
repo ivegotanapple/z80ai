@@ -1,187 +1,66 @@
-# Z80-μLM: A Retrocomputing Micro Language Model
+# GB Chat + Z80-μLM
 
-Z80-μLM is a 'conversational AI' that generates short character-by-character sequences, with quantization-aware training (QAT) to run on a Z80 processor with 64kb of ram.
+A chat interface for the Game Boy (GBDK-2020 4.x) answered by a z80ai model
+(https://github.com/HarryR/z80ai) that runs on the console itself.
 
-The root behind this project was the question: how small can we go while still having personality, and can it be trained or fine-tuned easily? With easy self-hosted distribution?
+## Build
 
-The answer is Yes! And a 40kb .com binary (including inference, weights & a chat-style UI) running on a 4MHz processor from 1976.
+    make GBDK=/path/to/gbdk              # produces gbchat.gb (64 KB, MBC1)
+    make model MODEL=model.npz           # switch model (model.npz from z80ai's exportmodel.py)
+    make tiles                           # after editing LAYOUT in tools/gen_tiles.py
 
-It won't pass the Turing test, but it might make you smile at the green screen.
+The model in `model/` comes from z80ai's `examples/tinychat` (z80ai is MIT or Apache-2.0).
 
-For insight on how to best train your own model, see [TRAINING.md](TRAINING.md).
+## Controls
 
-## Examples
+Keyboard shown: D-pad moves the key cursor, A types, B deletes (hides the keyboard when the
+input is empty), Select cycles the layers, Start sends and hides the keyboard.
+Keyboard hidden: Up/Down scrolls the log, Left/Right browses the sent messages,
+A or Select shows the keyboard, Start sends.
 
-Two pre-built examples are included:
+## Keyboard
 
-### [tinychat](examples/tinychat/)
+Three layers, always visible as tabs in the status bar (the current one is highlighted):
 
-A conversational chatbot trained on casual Q&A pairs. Responds to greetings, questions about itself, and general banter with terse personality-driven answers.
+- `abc` and `ABC`: digits, letters, `' , . ? / : ( ) ; ! -`
+- `#+=`: accented letters (capital under lowercase), the euro sign and the ASCII symbols
+  that are not on the other layers. Nothing is repeated.
 
-```
-> hello
-HI
-> are you a robot
-YES
-> do you dream
-MAYBE
-```
+Row 4, keys 0 to 2 are the same on every layer: cursor left, cursor right, space.
 
-### [guess](examples/guess/)
+Accented characters on the symbols layer (26): `é è ê à ù ç œ æ ß ñ` / `É È Ê À Ù Ç Œ Æ € Ñ` /
+`ä ö ü` / `Ä Ö Ü`. They are stored as Windows-1252 codes. The model was trained on ASCII, so
+before hashing they are folded to their base letter (`é` becomes `e`).
 
-A 20 Questions game where the model knows a secret topic and answers YES/NO/MAYBE to your questions. Guess correctly to WIN.
+## Limits
 
-```
-> is it alive
-YES
-> is it big
-YES
-> does it have a trunk
-YES
-> is it grey
-MAYBE
-> elephant
-WIN
-```
+- Background tiles: 256 of 256 are used (95 ASCII + 26 extended characters, each in white and
+  gray, plus the status bar and arrows). Adding one more character means giving up another.
+- Sprite tiles: 125 of 128.
+- Not available: `¡ ¿ ° ® † × ∞ © § £ θ ≃` and other Latin-1 letters such as `â î ô û ë ï á í ó ú å ø`.
 
-Includes tools for generating training data with LLMs (Ollama or Claude API) and balancing class distributions.
+## Contents
 
-## Features
+- `main.c`, `tiles.c/h`, `keyboard.h`: interface (tiles and keyboard are generated)
+- `lm.c`, `lm.h`, `lm_kernel.s`: inference engine (C and an SM83 assembly kernel)
+- `model/`: weights and biases as C sources, one layer per ROM bank
+- `tools/gbexport.py` (model to C), `tools/gen_kernel.py` (assembly kernel),
+  `tools/gen_tiles.py` (tiles and keyboard layout)
+- `tests/`: Python reference (`ref_infer.py`), outputs of the real Z80 binary (`z80_ref.json`),
+  `run_lmtest.py` (engine against the reference, plus accent folding), `e2e.py` (full ROM with
+  button presses)
 
-- **Trigram hash encoding**: Input text is hashed into 128 buckets - typo-tolerant, word-order invariant
-- **2-bit weight quantization**: Each weight is {-2, -1, 0, +1}, packed 4 per byte
-- **16-bit integer inference**: All math uses Z80-native 16-bit signed arithmetic
-- **~40KB .COM file**: Fits in CP/M's Transient Program Area (TPA)
-- **Autoregressive generation**: Outputs text character-by-character
-- **No floating point**: Everything is integer math with fixed-point scaling
-- **Interactive chat mode**: Just run `CHAT` with no arguments
+## Tests
 
-## Platform Support
+    pip install pyboy numpy
+    python3 tests/run_lmtest.py --gbdk /path/to/gbdk --model model.npz
+    python3 tests/e2e.py --model model.npz
 
-Z80-μLM runs on multiple Z80-based platforms:
+The engine output is identical, character for character, to the real CHAT.COM Z80 binary on
+31 prompts. Everything was tested in the PyBoy emulator only, not on hardware.
 
-- **CP/M**: Original target platform. Generates `.COM` files using `buildz80com.py`
-- **ZX Spectrum 48K**: Full support via `buildz80tap.py`. See [ZX-SPECTRUM.md](ZX-SPECTRUM.md) for details
-  - Generates `.TAP` files for emulators or real hardware
-  - Uses ZX Spectrum ROM routines for I/O
-  - Memory optimized for 48K systems
-  - Compatible with most ZX Spectrum emulators
+## Performance
 
-For ZX Spectrum builds, use `run-zx.sh` in example directories or see the [ZX Spectrum guide](ZX-SPECTRUM.md).
-
-## Interaction Style
-
-The model doesn't understand you. But somehow, it *gets* you.
-
-Your input is hashed into 128 buckets via trigram encoding - an abstract "tag cloud" representation. The model responds to the *shape* of your input, not the exact words:
-
-```
-"hello there"  →  [bucket 23: 64, bucket 87: 32, ...]
-"there hello"  →  [bucket 23: 64, bucket 87: 32, ...]  (same!)
-"helo ther"    →  [bucket 23: 32, bucket 87: 32, ...]  (similar - typo tolerant)
-```
-
-This is semantically powerful for short inputs, but there's a limit: longer or order-dependent sentences blur together as concepts compete for the same buckets. "Open the door and turn on the lights" will likely be too close to distinguish from "turn on the door and open the lights."
-
-### Small Responses, Big Meaning
-
-A 1-2 word response can convey surprising nuance:
-
-- `OK` - acknowledged, neutral
-- `WHY?` - questioning your premise
-- `R U?` - casting existential doubt
-- `MAYBE` - genuine uncertainty
-- `AM I?` - reflecting the question back
-
-This isn't necessarily a limitation - it's a different mode of interaction. The terse responses force you to infer meaning from context or ask probing direct yes/no questions to see if it understands or not (e.g. 'are you a bot', 'are you human', 'am i human' displays logically consistent memorized answers)
-
-### What It's Good At
-
-- Short, varied inputs with consistent categorized outputs
-- Fuzzy matching (typos, rephrasing, word order)
-- Personality through vocabulary choice
-- Running on constrained 8-bit hardware
-
-### What It's Not
-
-- A chatbot that generates novel sentences
-- Something that tracks multi-turn context deeply
-- A parser that understands grammar
-- Anything approaching general intelligence
-
-It's small, but functional. And sometimes that's exactly what you need.
-
-## Architecture
-
-- **Input**: 128 query trigram buckets + 128 context buckets
-- **Hidden layers**: Configurable depth/width, e.g., 256 → 192 → 128
-- **Output**: One neuron per character in charset
-- **Activation**: ReLU between hidden layers
-
-### Quantization Constraints
-
-The Z80 is an 8-bit CPU, but we use its 16-bit register pairs (HL, DE, BC) for activations and accumulators. Weights are packed 4-per-byte (2-bit each) and unpacked into 8-bit signed values for the multiply-accumulate.
-
-The 16-bit accumulator gives us numerical stability (summing 256 inputs without overflow), but the model's expressiveness is still bottlenecked by the 2-bit weights, and naive training may overflow or act 'weirdly' without QAT.
-
-### Z80 Inner Loops
-
-The core of inference is a tight multiply-accumulate loop. Weights are packed 4-per-byte:
-
-```z80
-; Unpack 2-bit weight from packed byte
-ld a, (PACKED)      ; Get packed weights
-and 03h             ; Mask bottom 2 bits
-sub 2               ; Map 0,1,2,3 → -2,-1,0,+1
-ld (WEIGHT), a
-
-; Rotate for next weight
-ld a, (PACKED)
-rrca
-rrca
-ld (PACKED), a
-```
-
-The multiply-accumulate handles the 4 possible weight values:
-
-```z80
-MULADD:
-    or a
-    jr z, DONE       ; weight=0: skip entirely
-    jp m, NEG        ; weight<0: subtract
-    ; weight=+1: add activation
-    ld hl, (ACC)
-    add hl, de
-    ld (ACC), hl
-    ret
-NEG:
-    cp 0FFh
-    jr z, NEG1       ; weight=-1
-    ; weight=-2: subtract twice
-    ld hl, (ACC)
-    sbc hl, de
-    sbc hl, de
-    ld (ACC), hl
-    ret
-NEG1:
-    ; weight=-1: subtract once
-    ld hl, (ACC)
-    sbc hl, de
-    ld (ACC), hl
-    ret
-```
-
-After each layer, arithmetic right-shift by 2 to prevent overflow:
-
-```z80
-sra h        ; Shift right arithmetic (preserves sign)
-rr l
-sra h
-rr l         ; ACC = ACC / 4
-```
-
-That's the entire neural network: unpack weight, multiply-accumulate, shift. Repeat ~100K times per character generated.
-
----
-
-License: MIT or Apache-2.0 as you see fit.
+About 0.67 s per generated character (0.45 s in the kernel, 0.22 s in C around it). A reply
+such as "HI" takes 3 passes (2 characters and the end marker), "MAYBE" takes 6. The buttons are
+not read during a pass.
