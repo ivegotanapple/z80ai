@@ -1,5 +1,18 @@
 # GB Chat + Z80-μLM
+---
+## DISCLAIMER: THIS IS AI GENERATED SLOP
+I have not written a single line of code on this repository. You can assume its garbage.
+The original repo is written with claude too. I'm not in position to judge. 
 
+It works as far as I've tested. Build instruction were also wrote by claude.
+
+<img width="241" height="240" alt="Capture d&#39;écran 2026-10-24 114814" src="https://github.com/user-attachments/assets/59b1f196-8e42-4924-b9e3-d9995f87a796" />
+<caption>As you can see it produces very reliable statements (ironic)</caption>
+
+<img width="241" height="240" alt="Capture d&#39;écran 2026-11-21 214721" src="https://github.com/user-attachments/assets/30c32734-40d4-4037-abd5-3e059a99347e" />
+<caption>8bits generated nonsense</caption>
+
+---
 A chat interface for the Game Boy (GBDK-2020 4.x) answered by a z80ai model
 (https://github.com/HarryR/z80ai) that runs on the console itself.
 
